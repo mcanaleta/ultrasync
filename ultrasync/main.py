@@ -495,6 +495,12 @@ class UltraSync(UltraSyncConfig):
                 '{} is not valid alarm state'.format(state))
             return False
 
+        if not self.supports_alarm_scene(state):
+            logger.error(
+                '{} alarm state is not supported by vendor {}'.format(
+                    state, self.vendor))
+            return False
+
         if not areas:
             # Load all of our detected areas
             areas = [int(a) + 1 for a in self.areas.keys()]
@@ -546,10 +552,19 @@ class UltraSync(UltraSyncConfig):
                         'fnum': XGZWPanelFunction.AREA_AWAY,
                     })
 
-                else:   # AlarmScene.DISARMED
+                elif state == AlarmScene.DISARMED:
                     payload.update({
                         'fnum': XGZWPanelFunction.AREA_DISARM,
                     })
+
+                else:
+                    # This is a final safety guard. Unsupported scenes are
+                    # rejected above and must never fall back to disarming.
+                    logger.error(
+                        '{} alarm state is not supported by vendor {}'.format(
+                            state, self.vendor))
+                    has_error = True
+                    continue
 
                 rtype = HubResponseType.JSON
 
@@ -586,10 +601,17 @@ class UltraSync(UltraSyncConfig):
                         'data2': CNPanelFunction.AREA_PANIC,
                     })
 
-                else:   # AlarmScene.DISARMED
+                elif state == AlarmScene.DISARMED:
                     payload.update({
                         'data2': CNPanelFunction.AREA_DISARM,
                     })
+
+                else:
+                    logger.error(
+                        '{} alarm state is not supported by vendor {}'.format(
+                            state, self.vendor))
+                    has_error = True
+                    continue
 
                 rtype = HubResponseType.XML
 
@@ -602,10 +624,26 @@ class UltraSync(UltraSyncConfig):
                     'Failed to send {} state to Area {}'.format(state, area))
                 has_error = True
 
-            logger.info(
-                'Sent {} state to Area {} Successfully'.format(state, area))
+            else:
+                logger.info(
+                    'Sent {} state to Area {} Successfully'.format(state, area))
 
         return not has_error
+
+    def supports_alarm_scene(self, state):
+        """Return whether the connected panel supports an alarm scene."""
+        if self.vendor in (NX595EVendor.ZEROWIRE, NX595EVendor.XGEN,
+                           NX595EVendor.XGEN8):
+            return state in (
+                AlarmScene.AWAY,
+                AlarmScene.STAY,
+                AlarmScene.DISARMED,
+            )
+
+        if self.vendor == NX595EVendor.COMNAV:
+            return state in ALARM_SCENES
+
+        return False
 
     def set_zone_bypass(self, zone, state=False):
         """
